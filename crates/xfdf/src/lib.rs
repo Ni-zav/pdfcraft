@@ -270,7 +270,7 @@ fn xfdf_annots(doc: &Document, out: &mut String) {
             if let Some(da) = text_of(doc, &d, b"DA") {
                 let _ = write!(out, "<defaultappearance>{}</defaultappearance>", esc(&da));
             }
-            if matches!(sub, b"Polygon" | b"PolyLine") {
+            if sub == b"Polygon" || sub == b"PolyLine" {
                 let vertices = nums_of(doc, d.get(b"Vertices"));
                 if vertices.len() >= 4 && vertices.len() % 2 == 0 && vertices.iter().all(|v| v.is_finite()) {
                     let pairs = vertices.chunks_exact(2).map(|p| format!("{},{}", n(p[0]), n(p[1]))).collect::<Vec<_>>();

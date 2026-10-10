@@ -118,14 +118,13 @@ fn xfdf_round_trips_comments_and_values() {
     assert!(!only.contains("<fields>"));
 }
 
-
 fn named_annot(doc: &Document, name: &str) -> Dict {
     for page in pdfcraft_model::pages(doc) {
         for a in page.dict.get(b"Annots").map(|a| doc.resolve(a)).and_then(|a| a.as_array().cloned()).unwrap_or_default() {
-            if let Some(d) = doc.resolve(&a).as_dict()
+            if let Some(d) = doc.resolve(&a).as_dict().cloned()
                 && d.get(b"NM").and_then(Object::as_string).map(|s| s.to_text()).as_deref() == Some(name)
             {
-                return d.clone();
+                return d;
             }
         }
     }
@@ -215,8 +214,8 @@ fn xfdf_preserves_callout_leader_insets_and_single_line_ending() {
     assert_eq!(import(&mut dst, data.as_bytes()).unwrap().comments, 1);
     let from = named_annot(&src, "callout");
     let to = named_annot(&dst, "callout");
-    assert_eq!(to.name(b"IT"), Some(b"FreeTextCallout".as_slice()));
-    assert_eq!(to.name(b"LE"), Some(b"OpenArrow".as_slice()));
+    assert_eq!(to.name(b"IT"), Some(&b"FreeTextCallout"[..]));
+    assert_eq!(to.name(b"LE"), Some(&b"OpenArrow"[..]));
     assert_eq!(nums_of(&src, from.get(b"CL")), nums_of(&dst, to.get(b"CL")));
     assert_eq!(nums_of(&src, from.get(b"RD")), nums_of(&dst, to.get(b"RD")));
     let reopened = Document::open(Arc::new(write_full(&dst, &SaveOptions::default()).unwrap())).unwrap();
