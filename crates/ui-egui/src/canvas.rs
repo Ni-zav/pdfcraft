@@ -1357,7 +1357,7 @@ impl DocView {
         let avail_w = (self.viewport_w - 2.0 * SIDE).max(100.0);
         let per_row = if self.layout == PageLayout::TwoUp { 2.0 } else { 1.0 };
         match self.fit {
-            Fit::Width => self.zoom = (avail_w - GAP * (per_row - 1.0)) / (max_w * PT * per_row),
+            Fit::Width => self.zoom = (avail_w - GAP * (per_row - 1.0)) / (w * PT * per_row),
             Fit::Page => {
                 let zw = (avail_w - GAP * (per_row - 1.0)) / (w * PT * per_row);
                 let zh = (self.viewport_h - 2.0 * MARGIN) / (h * PT);
@@ -1367,6 +1367,22 @@ impl DocView {
             Fit::None => {}
         }
         self.zoom = self.zoom.clamp(0.08, 64.0);
+    }
+
+    /// In single-page mode only the displayed page determines the horizontal scroll extent.
+    /// Otherwise a wider hidden page would push a correctly width-fitted page off center.
+    fn content_width(&self, info: &DocInfo, viewport_w: f32) -> f32 {
+        let width = match self.layout {
+            PageLayout::Single => {
+                let page = self.current.min(info.pages.len().saturating_sub(1));
+                info.pages.get(page).map_or(0.0, |p| self.display_size(p).0)
+            }
+            PageLayout::Continuous | PageLayout::TwoUp => {
+                info.pages.iter().map(|p| self.display_size(p).0).fold(0.0, f32::max)
+            }
+        };
+        let per_row = if self.layout == PageLayout::TwoUp { 2.0 } else { 1.0 };
+        (width * self.zoom * PT * per_row + 2.0 * SIDE).max(viewport_w)
     }
 
     /// Page rects in content coordinates (origin at the scroll content's top-left).
@@ -1756,11 +1772,7 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
         Vec2::ZERO
     };
 
-    let max_w = info.pages.iter().map(|p| view.display_size(p).0).fold(0.0, f32::max)
-        * view.zoom
-        * PT
-        * if view.layout == PageLayout::TwoUp { 2.0 } else { 1.0 };
-    let content_w = (max_w + 2.0 * SIDE).max(avail.width());
+    let content_w = view.content_width(info, avail.width());
     let rects = view.layout(info, content_w);
     let middle_gesture = view.auto_scroll.blocks_input();
     // Single page: when the whole page fits, the wheel would do nothing, so it turns pages
@@ -4078,6 +4090,38 @@ trailer << /Root 1 0 R >>
             v.fit_zoom(&info);
             assert!(v.zoom > big, "{fit:?}: single-page view fits the page it shows");
         }
+    }
+
+    #[test]
+    fn single_page_fit_width_uses_the_displayed_page_and_centers_it() {
+        let page = |width: f32| pdfcraft_render::PageInfo {
+            width,
+            height: 400.0,
+            label: String::new(),
+            crop: [0.0, 0.0, width, 400.0],
+            rotation: 0,
+        };
+        let info = DocInfo { pages: vec![page(300.0), page(600.0)], ..Default::default() };
+        let mut view = DocView::new(DocId(1), &info, ViewDefaults::default());
+        view.layout = PageLayout::Single;
+        view.fit = Fit::Width;
+        (view.viewport_w, view.viewport_h) = (1000.0, 800.0);
+
+        view.fit_zoom(&info);
+        let narrow_zoom = view.zoom;
+        assert!((view.content_width(&info, view.viewport_w) - view.viewport_w).abs() < 1.0);
+        view.current = 1;
+        view.fit_zoom(&info);
+        assert!((narrow_zoom / view.zoom - 2.0).abs() < 0.001);
+        assert!((view.content_width(&info, view.viewport_w) - view.viewport_w).abs() < 1.0);
+
+        view.layout = PageLayout::Continuous;
+        view.current = 0;
+        view.fit_zoom(&info);
+        let continuous_zoom = view.zoom;
+        view.current = 1;
+        view.fit_zoom(&info);
+        assert_eq!(view.zoom, continuous_zoom, "scrolling keeps the widest-page scale");
     }
 
     #[test]
