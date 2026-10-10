@@ -234,6 +234,22 @@ fn xfdf_annots(doc: &Document, out: &mut String) {
             if !quads.is_empty() {
                 let _ = write!(attrs, " coords=\"{}\"", quads.iter().map(|v| n(*v)).collect::<Vec<_>>().join(","));
             }
+            // FreeText callouts carry leader points and the text-box inset in XFDF
+            // attributes. /LE is one name for FreeText (two only for Line/PolyLine).
+            if sub == b"FreeText" && (d.name(b"IT") == Some(b"FreeTextCallout") || d.get(b"CL").is_some()) {
+                let _ = write!(attrs, " IT=\"FreeTextCallout\"");
+                let cl = nums_of(doc, d.get(b"CL"));
+                if matches!(cl.len(), 4 | 6) && cl.iter().all(|n| n.is_finite()) {
+                    let _ = write!(attrs, " callout=\"{}\"", cl.iter().map(|v| n(*v)).collect::<Vec<_>>().join(","));
+                }
+                let fringe = nums_of(doc, d.get(b"RD"));
+                if fringe.len() == 4 && fringe.iter().all(|n| n.is_finite()) {
+                    let _ = write!(attrs, " fringe=\"{}\"", fringe.iter().map(|v| n(*v)).collect::<Vec<_>>().join(","));
+                }
+                if let Some(le) = d.name(b"LE") {
+                    let _ = write!(attrs, " head=\"{}\"", esc(&String::from_utf8_lossy(le)));
+                }
+            }
             let l = nums_of(doc, d.get(b"L"));
             if l.len() == 4 {
                 let _ = write!(attrs, " start=\"{},{}\" end=\"{},{}\"", n(l[0]), n(l[1]), n(l[2]), n(l[3]));
@@ -253,6 +269,13 @@ fn xfdf_annots(doc: &Document, out: &mut String) {
             }
             if let Some(da) = text_of(doc, &d, b"DA") {
                 let _ = write!(out, "<defaultappearance>{}</defaultappearance>", esc(&da));
+            }
+            if matches!(sub, b"Polygon" | b"PolyLine") {
+                let vertices = nums_of(doc, d.get(b"Vertices"));
+                if vertices.len() >= 4 && vertices.len() % 2 == 0 && vertices.iter().all(|v| v.is_finite()) {
+                    let pairs = vertices.chunks_exact(2).map(|p| format!("{},{}", n(p[0]), n(p[1]))).collect::<Vec<_>>();
+                    let _ = write!(out, "<vertices>{}</vertices>", pairs.join(";"));
+                }
             }
             let ink = d.get(b"InkList").map(|o| doc.resolve(o)).and_then(|o| o.as_array().cloned()).unwrap_or_default();
             if !ink.is_empty() {
@@ -595,7 +618,24 @@ fn annot_from_xml(node: roxmltree::Node, subtype: &str, page_ref: ObjRef) -> Opt
             d.set(b"L".to_vec(), arr(&[s[0], s[1], e[0], e[1]]));
         }
     }
-    if node.attribute("head").is_some() || node.attribute("tail").is_some() {
+    if subtype == "FreeText" && (node.attribute("callout").is_some() || node.attribute("IT") == Some("FreeTextCallout")) {
+        if let Some(points) = node.attribute("callout") {
+            let points = csv(points);
+            if matches!(points.len(), 4 | 6) && points.iter().all(|p| p.is_finite()) {
+                d.set(b"CL".to_vec(), arr(&points));
+                d.set(b"IT".to_vec(), Object::name("FreeTextCallout"));
+            }
+        }
+        if let Some(fringe) = node.attribute("fringe") {
+            let fringe = csv(fringe);
+            if fringe.len() == 4 && fringe.iter().all(|p| p.is_finite()) {
+                d.set(b"RD".to_vec(), arr(&fringe));
+            }
+        }
+        if let Some(head) = node.attribute("head") {
+            d.set(b"LE".to_vec(), Object::name(head));
+        }
+    } else if node.attribute("head").is_some() || node.attribute("tail").is_some() {
         d.set(
             b"LE".to_vec(),
             Object::Array(vec![Object::name(node.attribute("head").unwrap_or("None")), Object::name(node.attribute("tail").unwrap_or("None"))]),
@@ -608,6 +648,12 @@ fn annot_from_xml(node: roxmltree::Node, subtype: &str, page_ref: ObjRef) -> Opt
             }
             "defaultappearance" => {
                 d.set(b"DA".to_vec(), PdfString::literal(child.text().unwrap_or("").as_bytes().to_vec()));
+            }
+            "vertices" if matches!(subtype, "Polygon" | "PolyLine") => {
+                let vertices = csv(child.text().unwrap_or(""));
+                if vertices.len() >= 4 && vertices.len() % 2 == 0 && vertices.iter().all(|v| v.is_finite()) {
+                    d.set(b"Vertices".to_vec(), arr(&vertices));
+                }
             }
             "inklist" => {
                 let list: Vec<Object> = child

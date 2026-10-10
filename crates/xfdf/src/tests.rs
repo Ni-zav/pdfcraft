@@ -118,6 +118,111 @@ fn xfdf_round_trips_comments_and_values() {
     assert!(!only.contains("<fields>"));
 }
 
+
+fn named_annot(doc: &Document, name: &str) -> Dict {
+    for page in pdfcraft_model::pages(doc) {
+        for a in page.dict.get(b"Annots").map(|a| doc.resolve(a)).and_then(|a| a.as_array().cloned()).unwrap_or_default() {
+            if let Some(d) = doc.resolve(&a).as_dict()
+                && d.get(b"NM").and_then(Object::as_string).map(|s| s.to_text()).as_deref() == Some(name)
+            {
+                return d.clone();
+            }
+        }
+    }
+    panic!("missing annotation {name}");
+}
+
+#[test]
+fn xfdf_preserves_polygon_polyline_vertices_and_line_endings() {
+    use pdfcraft_annot::LineEnding;
+    let mut src = blank();
+    let polys = [
+        (
+            "poly",
+            Shape::Polygon { vertices: vec![[40.0, 50.0], [160.0, 50.0], [100.0, 170.0]], cloud: false },
+        ),
+        (
+            "line",
+            Shape::PolyLine {
+                vertices: vec![[50.0, 300.0], [80.0, 320.0], [130.0, 280.0]],
+                start: LineEnding::None,
+                end: LineEnding::OpenArrow,
+            },
+        ),
+    ];
+    for (name, shape) in polys {
+        add_annotation(
+            &mut src,
+            &NewAnnotation {
+                page: 0,
+                style: Style::default_for(&shape),
+                shape,
+                contents: name.into(),
+                author: "Contributor".into(),
+            },
+            &Meta { date: None, id: name.into() },
+        )
+        .unwrap();
+    }
+
+    let data = export_xfdf(&src, true, false, "shapes.pdf");
+    assert!(data.contains("<vertices>40,50;160,50;100,170</vertices>"), "{data}");
+    assert!(data.contains("<vertices>50,300;80,320;130,280</vertices>"), "{data}");
+    let mut dst = blank();
+    assert_eq!(import(&mut dst, data.as_bytes()).unwrap().comments, 2);
+    for name in ["poly", "line"] {
+        let from = named_annot(&src, name);
+        let to = named_annot(&dst, name);
+        assert_eq!(nums_of(&src, from.get(b"Vertices")), nums_of(&dst, to.get(b"Vertices")), "{name}");
+        assert_eq!(from.get(b"LE"), to.get(b"LE"), "{name}");
+    }
+    let saved = write_full(&dst, &SaveOptions::default()).unwrap();
+    let reopened = Document::open(Arc::new(saved)).unwrap();
+    assert_eq!(nums_of(&src, named_annot(&src, "poly").get(b"Vertices")),
+               nums_of(&reopened, named_annot(&reopened, "poly").get(b"Vertices")));
+}
+
+#[test]
+fn xfdf_preserves_callout_leader_insets_and_single_line_ending() {
+    use pdfcraft_annot::LineEnding;
+    let mut src = blank();
+    let shape = Shape::Callout {
+        rect: [120.0, 150.0, 280.0, 205.0],
+        knee: [85.0, 140.0],
+        point: [60.0, 100.0],
+        font_size: 12.0,
+        ending: LineEnding::OpenArrow,
+    };
+    add_annotation(
+        &mut src,
+        &NewAnnotation {
+            page: 0,
+            style: Style::default_for(&shape),
+            shape,
+            contents: "Callout text".into(),
+            author: "Contributor".into(),
+        },
+        &Meta { date: None, id: "callout".into() },
+    )
+    .unwrap();
+    let data = export_xfdf(&src, true, false, "callout.pdf");
+    assert!(data.contains("IT=\"FreeTextCallout\""), "{data}");
+    assert!(data.contains(" callout=\""), "{data}");
+    assert!(data.contains(" fringe=\""), "{data}");
+    assert!(data.contains(" head=\"OpenArrow\""), "{data}");
+
+    let mut dst = blank();
+    assert_eq!(import(&mut dst, data.as_bytes()).unwrap().comments, 1);
+    let from = named_annot(&src, "callout");
+    let to = named_annot(&dst, "callout");
+    assert_eq!(to.name(b"IT"), Some(b"FreeTextCallout".as_slice()));
+    assert_eq!(to.name(b"LE"), Some(b"OpenArrow".as_slice()));
+    assert_eq!(nums_of(&src, from.get(b"CL")), nums_of(&dst, to.get(b"CL")));
+    assert_eq!(nums_of(&src, from.get(b"RD")), nums_of(&dst, to.get(b"RD")));
+    let reopened = Document::open(Arc::new(write_full(&dst, &SaveOptions::default()).unwrap())).unwrap();
+    assert_eq!(nums_of(&src, from.get(b"CL")), nums_of(&reopened, named_annot(&reopened, "callout").get(b"CL")));
+}
+
 #[test]
 fn fdf_round_trips_values_and_comments() {
     let src = filled();
