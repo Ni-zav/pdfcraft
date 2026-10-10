@@ -1334,7 +1334,10 @@ impl Automation {
                 Some((_, t)) => format!("{stem}-{}.pdf", safe(t)),
                 None => format!("{stem}-part{}.pdf", i + 1),
             };
-            let path = child(&dir, &file);
+            let path = unused(&dir, file.strip_suffix(".pdf").unwrap_or(&file));
+            if path.exists() {
+                return Err(failed(format!("{}: no unused output name available", path.display())));
+            }
             write_atomic(&path, bytes)?;
             files.push(json!({ "path": path.to_string_lossy(), "first_page": first, "last_page": last }));
         }
