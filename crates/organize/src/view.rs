@@ -129,7 +129,7 @@ pub fn initial_view(doc: &Document) -> InitialView {
             Some(b"FitB" | b"FitBH" | b"FitBV") => Magnification::FitVisible,
             Some(b"XYZ") => match d.get(4).and_then(|z| z.as_f64()) {
                 Some(z) if z.is_finite() && z > 0.0 && (z - 1.0).abs() < 1e-6 => Magnification::ActualSize,
-                Some(z) if z.is_finite() && z > 0.0 => Magnification::Percent(z * 100.0),
+                Some(z) if z.is_finite() && z > 0.0 && z <= f64::MAX / 100.0 => Magnification::Percent(z * 100.0),
                 _ => Magnification::Default,
             },
             _ => Magnification::Default,

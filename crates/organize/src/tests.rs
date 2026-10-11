@@ -1570,6 +1570,14 @@ fn initial_view_rejects_nonfinite_zoom_before_modifying_catalog() {
     })
     .unwrap();
     assert_eq!(crate::initial_view(&doc).magnification, Magnification::Default);
+    doc.update_dict(root, |c| {
+        c.set(
+            b"OpenAction".to_vec(),
+            Object::Array(vec![Object::Ref(first), Object::name("XYZ"), Object::Null, Object::Null, Object::Real(f64::MAX)]),
+        );
+    })
+    .unwrap();
+    assert_eq!(crate::initial_view(&doc).magnification, Magnification::Default, "zoom percent must not overflow");
 }
 
 // ── Split / Extract keep only the resources the part draws (#204) ──────────────────────────────
