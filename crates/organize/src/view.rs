@@ -128,8 +128,8 @@ pub fn initial_view(doc: &Document) -> InitialView {
             Some(b"FitV") => Magnification::FitHeight,
             Some(b"FitB" | b"FitBH" | b"FitBV") => Magnification::FitVisible,
             Some(b"XYZ") => match d.get(4).and_then(|z| z.as_f64()) {
-                Some(z) if z > 0.0 && (z - 1.0).abs() < 1e-6 => Magnification::ActualSize,
-                Some(z) if z > 0.0 => Magnification::Percent(z * 100.0),
+                Some(z) if z.is_finite() && z > 0.0 && (z - 1.0).abs() < 1e-6 => Magnification::ActualSize,
+                Some(z) if z.is_finite() && z > 0.0 => Magnification::Percent(z * 100.0),
                 _ => Magnification::Default,
             },
             _ => Magnification::Default,
@@ -151,6 +151,11 @@ pub fn displays_doc_title(doc: &Document) -> bool {
 /// Write the initial view. An opening action that isn't a plain destination (a script, say) is
 /// kept unless the page or magnification asks for a destination.
 pub fn set_initial_view(doc: &mut Document, v: &InitialView) -> Result<(), OrganizeError> {
+    if let Magnification::Percent(p) = v.magnification
+        && !p.is_finite()
+    {
+        return Err(OrganizeError::Invalid("initial magnification must be finite".into()));
+    }
     let (root, c) = catalog(doc)?;
     let pages = crate::walk(doc)?;
     if v.page >= pages.len() {

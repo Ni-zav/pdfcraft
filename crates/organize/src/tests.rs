@@ -1548,6 +1548,30 @@ fn initial_view_round_trips_and_keeps_scripts() {
     assert!(crate::set_initial_view(&mut doc, &crate::InitialView { page: 9, ..Default::default() }).is_err());
 }
 
+#[test]
+fn initial_view_rejects_nonfinite_zoom_before_modifying_catalog() {
+    use crate::view::Magnification;
+
+    let mut doc = open(fixture());
+    for amount in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        let view = crate::InitialView { magnification: Magnification::Percent(amount), ..Default::default() };
+        assert!(matches!(crate::set_initial_view(&mut doc, &view), Err(OrganizeError::Invalid(_))));
+        assert_eq!(crate::initial_view(&doc), crate::InitialView::default(), "failed settings must not mutate the catalog");
+    }
+
+    // Malformed existing opening destinations must not put a non-finite value into the UI.
+    let root = doc.root().unwrap();
+    let first = pages(&doc).unwrap()[0].obj;
+    doc.update_dict(root, |c| {
+        c.set(
+            b"OpenAction".to_vec(),
+            Object::Array(vec![Object::Ref(first), Object::name("XYZ"), Object::Null, Object::Null, Object::Real(f64::INFINITY)]),
+        );
+    })
+    .unwrap();
+    assert_eq!(crate::initial_view(&doc).magnification, Magnification::Default);
+}
+
 // ── Split / Extract keep only the resources the part draws (#204) ──────────────────────────────
 
 /// A content stream with no text operators (an image draw).
