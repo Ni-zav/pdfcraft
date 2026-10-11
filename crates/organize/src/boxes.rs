@@ -53,8 +53,10 @@ pub enum BoxSpec {
 
 fn rect_of(o: Option<&Object>, doc: &Document) -> Option<[f64; 4]> {
     let o = doc.resolve(o?);
-    let v: Vec<f64> = o.as_array()?.iter().filter_map(|x| doc.resolve(x).as_f64()).collect();
-    (v.len() == 4 && v.iter().all(|x| x.is_finite())).then(|| [v[0].min(v[2]), v[1].min(v[3]), v[0].max(v[2]), v[1].max(v[3])])
+    let [left, bottom, right, top] = o.as_array()?.as_slice() else { return None };
+    // Ignore a malformed box rather than silently shifting its numeric entries into new slots.
+    let v = [doc.resolve(left).as_f64()?, doc.resolve(bottom).as_f64()?, doc.resolve(right).as_f64()?, doc.resolve(top).as_f64()?];
+    v.iter().all(|x| x.is_finite()).then(|| [v[0].min(v[2]), v[1].min(v[3]), v[0].max(v[2]), v[1].max(v[3])])
 }
 
 fn intersect(a: [f64; 4], b: [f64; 4]) -> [f64; 4] {
@@ -107,7 +109,10 @@ pub fn set_page_box(doc: &mut Document, pages: &[usize], which: PageBox, spec: B
             }
         };
         if let Some(r) = rect
-            && (r[2] - r[0] < 1.0 || r[3] - r[1] < 1.0)
+            && (!r.iter().all(|x| x.is_finite())
+                || !((r[2] - r[0]).is_finite() && (r[3] - r[1]).is_finite())
+                || r[2] - r[0] < 1.0
+                || r[3] - r[1] < 1.0)
         {
             return Err(bad(&format!("page {} would be smaller than a point", i + 1)));
         }

@@ -1469,6 +1469,27 @@ fn page_boxes_default_inherit_and_set() {
 }
 
 #[test]
+fn malformed_page_boxes_do_not_shift_coordinates_or_save_nonfinite_dimensions() {
+    let mut doc = open(fixture());
+    let page = pages(&doc).unwrap()[0].obj;
+    // Five entries with a nonnumeric third value were misread as a four-number box.
+    doc.update_dict(page, |d| {
+        d.set(
+            b"CropBox".to_vec(),
+            Object::Array(vec![Object::Real(10.0), Object::Real(20.0), Object::Bool(false), Object::Real(120.0), Object::Real(130.0)]),
+        );
+    })
+    .unwrap();
+    assert_eq!(page_boxes(&doc).unwrap()[0][1], [0.0, 0.0, 300.0, 400.0], "malformed crop falls back to the media box");
+
+    let before = page_boxes(&doc).unwrap();
+    // All coordinates are finite; subtracting extreme endpoints can still overflow.
+    let oversized = BoxSpec::Rect([-1.0e308, 0.0, 1.0e308, 200.0]);
+    assert!(matches!(set_page_box(&mut doc, &[0], PageBox::Media, oversized), Err(OrganizeError::InvalidBox(_))));
+    assert_eq!(page_boxes(&doc).unwrap(), before, "failed edits must not mutate the document");
+}
+
+#[test]
 fn duplicate_pages_inserts_copies_after_the_last() {
     let mut doc = open(fixture());
     duplicate_pages(&mut doc, &[0, 1]).unwrap();
