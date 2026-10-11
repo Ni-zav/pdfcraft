@@ -68,6 +68,9 @@ fn page_selection() {
     assert!(matches!(select_pages(5, Some("7"), &[], Subset::All, false), Err(PrintError::Invalid(_))));
     assert!(matches!(select_pages(5, Some("x"), &[], Subset::All, false), Err(PrintError::Invalid(_))));
     assert_eq!(select_pages(1, None, &[], Subset::Even, false), Err(PrintError::NoPages));
+    assert_eq!(select_pages(0, None, &[], Subset::All, false), Err(PrintError::NoPages));
+    assert_eq!(select_pages(0, Some("-"), &[], Subset::All, false), Err(PrintError::NoPages));
+    assert_eq!(select_pages(0, Some("-"), &[], Subset::Odd, true), Err(PrintError::NoPages));
     // An explicit list (selected thumbnails): positions, never labels, in the order given.
     assert_eq!(select_listed(5, &[1, 3], Subset::All, false).unwrap(), [1, 3]);
     assert_eq!(select_listed(5, &[0, 2, 4], Subset::Even, false).unwrap(), [2]);

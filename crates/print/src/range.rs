@@ -28,6 +28,10 @@ fn page_of(tok: &str, count: usize, labels: &[String]) -> Result<usize, PrintErr
 /// numbers and labels with `-` ranges (open-ended allowed: `5-`, `-3`). The subset counts the
 /// selected pages (the first selected is "odd"), as Acrobat does.
 pub fn select_pages(count: usize, range: Option<&str>, labels: &[String], subset: Subset, reverse: bool) -> Result<Vec<usize>, PrintError> {
+    if count == 0 {
+        // An open-ended range ("-") must not invent page 1 in an empty document.
+        return Err(PrintError::NoPages);
+    }
     let mut pages = Vec::new();
     match range.map(str::trim).filter(|r| !r.is_empty()) {
         None => pages.extend(0..count),
