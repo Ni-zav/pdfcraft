@@ -96,7 +96,7 @@ pub fn initial_view(doc: &Document) -> InitialView {
         ..InitialView::default()
     };
     if let Some(vp) = c.get(b"ViewerPreferences").map(|o| doc.resolve(o)).and_then(|o| o.as_dict().cloned()) {
-        let flag = |k: &[u8]| matches!(vp.get(k), Some(Object::Bool(true)));
+        let flag = |k: &[u8]| matches!(vp.get(k).map(|value| doc.resolve(value)).as_deref(), Some(Object::Bool(true)));
         v.fit_window = flag(b"FitWindow");
         v.center_window = flag(b"CenterWindow");
         v.display_title = flag(b"DisplayDocTitle");

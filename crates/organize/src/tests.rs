@@ -1548,6 +1548,25 @@ fn initial_view_round_trips_and_keeps_scripts() {
     assert!(crate::set_initial_view(&mut doc, &crate::InitialView { page: 9, ..Default::default() }).is_err());
 }
 
+#[test]
+fn initial_view_resolves_indirect_viewer_preference_flags() {
+    let mut doc = open(fixture());
+    let flag = doc.add(Object::Bool(true));
+    let root = doc.root().unwrap();
+    let mut vp = pdfcraft_cos::Dict::new();
+    vp.set(b"FitWindow".to_vec(), Object::Ref(flag));
+    vp.set(b"DisplayDocTitle".to_vec(), Object::Ref(flag));
+    vp.set(b"HideToolbar".to_vec(), Object::Bool(false));
+    doc.update_dict(root, |c| c.set(b"ViewerPreferences".to_vec(), Object::Dict(vp)))
+        .unwrap();
+
+    let read = crate::initial_view(&doc);
+    assert!(read.fit_window);
+    assert!(read.display_title);
+    assert!(!read.hide_toolbar);
+    assert!(crate::view::displays_doc_title(&doc), "both preference readers agree");
+}
+
 // ── Split / Extract keep only the resources the part draws (#204) ──────────────────────────────
 
 /// A content stream with no text operators (an image draw).
